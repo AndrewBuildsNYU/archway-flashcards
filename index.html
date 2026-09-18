@@ -1,0 +1,268 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Archway Flashcards Â· NYU Archway</title>
+<meta name="description" content="Turn lecture notes into a reviewable flashcard deck and export it to Anki, through the NYU Archway gateway.">
+<link rel="stylesheet" href="assets/archway.css">
+<script>
+  // Pre-paint theme stamp: avoids a light flash for dark-mode users. Inline on
+  // purpose and safe here â€” GitHub Pages sets no CSP. (The Archway's own pages
+  // cannot do this; script-src 'self' blocks it.)
+  try {
+    var t = localStorage.getItem("nyu-archway:theme");
+    if (t) document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+</script>
+<style>
+  .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--sp-3); }
+  .view-toggle { display: flex; gap: var(--sp-2); }
+
+  /* The flip: both faces share one grid cell so the container is as tall as the
+     longer of the two and never resizes mid-flip. */
+  .flash { perspective: 1400px; }
+  .flash__inner {
+    display: grid;
+    transform-style: preserve-3d;
+    transition: transform .45s cubic-bezier(.2, .7, .3, 1);
+    min-height: 240px;
+  }
+  .flash.is-flipped .flash__inner { transform: rotateY(180deg); }
+  .flash__face {
+    grid-area: 1 / 1;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-3);
+    padding: var(--sp-5);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background: var(--surface-2);
+    text-align: center;
+    overflow: auto;
+  }
+  .flash__face--back { transform: rotateY(180deg); }
+  .flash__q { font-size: var(--fs-lg); line-height: 1.35; max-width: 46ch; margin: 0; }
+  .flash__a { font-size: var(--fs-md); line-height: 1.55; max-width: 60ch; margin: 0; white-space: pre-wrap; }
+
+  .grades { display: flex; flex-wrap: wrap; gap: var(--sp-2); justify-content: center; }
+  .grades.hidden { display: none; }   /* this block loads after archway.css, so .hidden needs the help */
+  .deck-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .deck-row {
+    display: grid;
+    grid-template-columns: 1.1fr 1.4fr auto;
+    gap: var(--sp-3);
+    align-items: start;
+    padding: var(--sp-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--surface-2);
+  }
+  .deck-row__back { color: var(--ink-2); white-space: pre-wrap; }
+  .stat-row { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
+  .stat__value { font-size: var(--fs-xl); font-family: var(--mono); display: block; }
+  kbd {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: 1px 6px;
+    background: var(--surface-3);
+    color: var(--ink-2);
+  }
+  .raw-out {
+    white-space: pre-wrap;
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    max-height: 340px;
+    overflow: auto;
+    margin: 0;
+  }
+  @media (max-width: 640px) {
+    .deck-row { grid-template-columns: 1fr; }
+    .flash__q { font-size: var(--fs-md); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .flash__inner { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <span class="topbar__mark">NYU</span>
+    <span class="topbar__title">
+      <strong>Archway Flashcards</strong>
+      <span>NYU Archway example</span>
+    </span>
+    <button type="button" class="btn btn--sm btn--ghost" id="theme-toggle">Dark mode</button>
+    <a class="btn btn--sm" href="https://github.com/AndrewBuildsNYU/archway-flashcards">Source</a>
+  </header>
+
+  <p class="lede">Paste a lecture's worth of notes and get a deck of real questions you can review one card
+  at a time and export to Anki. It demonstrates asking the Archway for strict JSON â€” and parsing it
+  defensively for the times a model wraps it in prose anyway.</p>
+
+  <div id="key-mount"></div>
+
+  <main id="app">
+    <section class="card">
+      <div class="card__head">
+        <strong>1 &middot; Your notes</strong>
+        <button type="button" class="btn btn--sm btn--ghost" id="sample">Load sample notes</button>
+      </div>
+
+      <div class="stack">
+        <div class="field">
+          <label for="notes">Lecture notes or reading</label>
+          <textarea id="notes" rows="10" placeholder="Paste a lecture's worth of notes here â€” headings, bullets and half-sentences are fine."></textarea>
+          <p class="field__hint">Sent to the model you pick and nowhere else. The Archway records who called
+          which model and how many tokens, never the text itself.</p>
+        </div>
+
+        <div class="controls">
+          <div class="field">
+            <label for="count">Cards</label>
+            <select id="count">
+              <option value="10">10 cards</option>
+              <option value="15" selected>15 cards</option>
+              <option value="20">20 cards</option>
+              <option value="30">30 cards</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="difficulty">Question style</label>
+            <select id="difficulty">
+              <option value="recall" selected>Recall &mdash; terms and facts</option>
+              <option value="understand">Understand &mdash; why and how</option>
+              <option value="apply">Apply &mdash; short scenarios</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="model">Model</label>
+            <select id="model" disabled>
+              <option>Connect a key first</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row">
+          <button type="button" class="btn btn--primary" id="generate" disabled>Build deck</button>
+          <button type="button" class="btn btn--ghost hidden" id="stop">Stop</button>
+          <span class="small muted" id="gen-status" role="status" aria-live="polite"></span>
+          <span class="spacer"></span>
+          <span class="small muted" id="gen-progress" aria-hidden="true"></span>
+        </div>
+
+        <p class="field__hint" id="key-hint">Connect your Archway key above to enable generation.</p>
+
+        <div id="error"></div>
+        <div id="readout" class="readout hidden"></div>
+      </div>
+    </section>
+
+    <section class="card hidden" id="deck-section">
+      <div class="card__head">
+        <strong>2 &middot; Review</strong>
+        <div class="view-toggle" role="group" aria-label="View">
+          <button type="button" class="btn btn--sm btn--primary" id="view-review" aria-pressed="true">Review</button>
+          <button type="button" class="btn btn--sm btn--ghost" id="view-deck" aria-pressed="false">Deck</button>
+        </div>
+      </div>
+
+      <div class="stack" id="review-panel" tabindex="-1">
+        <div class="row row--tight">
+          <span class="badge badge--bad" id="count-again">Again 0</span>
+          <span class="badge badge--warn" id="count-hard">Hard 0</span>
+          <span class="badge badge--good" id="count-good">Good 0</span>
+          <span class="spacer"></span>
+          <span class="small muted" id="progress-label" aria-live="polite"></span>
+        </div>
+        <div class="meter"><div class="meter__fill" id="progress-fill"></div></div>
+
+        <div class="flash" id="flash">
+          <div class="flash__inner">
+            <div class="flash__face flash__face--front" id="face-front" tabindex="-1" role="group" aria-label="Question">
+              <span class="badge badge--accent" id="front-tag"></span>
+              <p class="flash__q" id="front-text"></p>
+              <span class="sr-only">Press the space bar to show the answer.</span>
+            </div>
+            <div class="flash__face flash__face--back" id="face-back" tabindex="-1" role="group" aria-label="Answer" aria-hidden="true">
+              <span class="xs muted">Answer</span>
+              <p class="flash__a" id="back-text"></p>
+              <span class="sr-only">Press 1 for again, 2 for hard, 3 for good.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="row" id="reveal-row">
+          <button type="button" class="btn btn--ghost btn--sm" id="prev">&larr; Previous</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn btn--primary" id="reveal">Show answer</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn btn--ghost btn--sm" id="next">Next &rarr;</button>
+        </div>
+
+        <div class="grades hidden" id="grade-row">
+          <button type="button" class="btn btn--ghost" id="grade-again">Again (1)</button>
+          <button type="button" class="btn" id="grade-hard">Hard (2)</button>
+          <button type="button" class="btn btn--primary" id="grade-good">Good (3)</button>
+        </div>
+
+        <p class="xs muted">
+          <kbd>Space</kbd> show answer &middot;
+          <kbd>1</kbd> again &middot; <kbd>2</kbd> hard &middot; <kbd>3</kbd> good &middot;
+          <kbd>&larr;</kbd> <kbd>&rarr;</kbd> previous / next card.
+          Marking a card <em>Again</em> sends it to the back of this session's queue.
+        </p>
+      </div>
+
+      <div class="stack hidden" id="deck-panel" tabindex="-1">
+        <p class="card__note">Every card in the deck. This is what the export contains.</p>
+        <div class="deck-list" id="deck-list"></div>
+      </div>
+
+      <div class="stack hidden" id="summary-panel" tabindex="-1"></div>
+    </section>
+
+    <section class="card hidden" id="export-section">
+      <div class="card__head"><strong>3 &middot; Keep it</strong></div>
+      <div class="stack">
+        <div class="row">
+          <button type="button" class="btn btn--primary" id="download-csv">Download Anki CSV</button>
+          <button type="button" class="btn" id="copy-tsv">Copy as TSV</button>
+          <span class="small muted" id="export-status" role="status" aria-live="polite"></span>
+        </div>
+        <p class="field__hint">In Anki: <span class="mono">File &rarr; Import</span>, choose the CSV, and map
+        column 1 to Front, column 2 to Back and column 3 to Tags (the file states this itself for Anki 2.1.54
+        and newer). The TSV pastes straight into a spreadsheet or Quizlet's import box.</p>
+      </div>
+    </section>
+
+    <section class="card hidden" id="raw-section">
+      <div class="card__head"><strong>Unparsed response</strong></div>
+      <div class="stack">
+        <div class="alert">
+          <div class="alert__title">That response was not the JSON this app asked for</div>
+          <p class="small">Nothing is lost â€” here is exactly what came back. Try again, or pick another model:
+          some follow a strict JSON instruction more reliably than others.</p>
+        </div>
+        <pre class="raw-out" id="raw-out"></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>Runs entirely in your browser. Your key is sent only to the Archway you point it at.</span>
+    <span>Ask whoever issued your key for the gateway address and its documentation.</span>
+    <a href="https://github.com/AndrewBuildsNYU?tab=repositories&amp;q=archway-">More examples</a>
+  </footer>
+</div>
+<script src="assets/archway.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
