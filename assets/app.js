@@ -1,5 +1,10 @@
 /* Archway Flashcards: owns the prompt, the defensive JSON parse, the review queue
-   and the Anki export. Everything about keys, models and HTTP lives in archway.js. */
+   and the Anki export. Everything about keys, models and HTTP lives in archway.js.
+
+   This file is UTF-8 and index.html is pure ASCII with HTML entities for its
+   punctuation. That is not fussiness: the published index.html had been saved
+   through a Latin-1 round trip and was serving a double-encoded "A-circumflex"
+   in its own title. Entities in the markup make that unrepeatable. */
 (function () {
   "use strict";
 
@@ -54,9 +59,9 @@
   var els = {
     notes: $("notes"), sample: $("sample"), count: $("count"), difficulty: $("difficulty"),
     model: $("model"), generate: $("generate"), stop: $("stop"), keyHint: $("key-hint"),
-    genStatus: $("gen-status"), genProgress: $("gen-progress"),
+    genStatus: $("gen-status"), genSpinner: $("gen-spinner"), genProgress: $("gen-progress"),
     error: $("error"), readout: $("readout"),
-    deckSection: $("deck-section"), exportSection: $("export-section"),
+    deckSection: $("deck-section"), deckCount: $("deck-count"), exportSection: $("export-section"),
     rawSection: $("raw-section"), rawOut: $("raw-out"),
     viewReview: $("view-review"), viewDeck: $("view-deck"),
     reviewPanel: $("review-panel"), deckPanel: $("deck-panel"), summaryPanel: $("summary-panel"),
@@ -67,8 +72,9 @@
     gradeAgain: $("grade-again"), gradeHard: $("grade-hard"), gradeGood: $("grade-good"),
     prev: $("prev"), next: $("next"),
     countAgain: $("count-again"), countHard: $("count-hard"), countGood: $("count-good"),
-    progressLabel: $("progress-label"), progressFill: $("progress-fill"),
-    downloadCsv: $("download-csv"), copyTsv: $("copy-tsv"), exportStatus: $("export-status")
+    progressLabel: $("progress-label"), progressMeter: $("progress-meter"), progressFill: $("progress-fill"),
+    downloadCsv: $("download-csv"), copyTsv: $("copy-tsv"),
+    exportStatus: $("export-status"), exportSpinner: $("export-spinner")
   };
 
   var state = {
@@ -83,6 +89,12 @@
   };
 
   var modelsById = {};
+
+  /* Show or hide one of the .spinner rings. Every async path turns its own
+     spinner off in a finally, so a rejected promise cannot leave one turning. */
+  function spin(node, on) {
+    if (node) node.classList.toggle("hidden", !on);
+  }
 
   /* ---------- setup ---------- */
 
@@ -106,6 +118,7 @@
 
   function loadModels() {
     els.genStatus.textContent = "Loading models…";
+    spin(els.genSpinner, true);
     Archway.listModels().then(function (models) {
       modelsById = {};
       models.forEach(function (m) { modelsById[m.id] = m; });
@@ -117,6 +130,8 @@
       setReady(false);
       els.genStatus.textContent = "";
       Archway.renderError(els.error, err);
+    }).finally(function () {
+      spin(els.genSpinner, false);
     });
   }
 
@@ -183,6 +198,7 @@
     els.difficulty.disabled = on;
     els.notes.readOnly = on;
     els.stop.classList.toggle("hidden", !on);
+    spin(els.genSpinner, on);
     if (on) {
       els.generate.disabled = true;
       els.model.disabled = true;
@@ -252,8 +268,10 @@
 
   function buildDeck(cards) {
     state.deck = cards;
+    els.deckCount.textContent = cards.length + (cards.length === 1 ? " card" : " cards");
     els.deckSection.classList.remove("hidden");
     els.exportSection.classList.remove("hidden");
+    els.exportStatus.textContent = "";
     renderDeckList();
     restart();
     switchView("review");
@@ -298,14 +316,19 @@
     els.prev.disabled = state.pos === 0;
     els.next.disabled = state.pos >= state.queue.length - 1;
 
-    els.countAgain.textContent = "Again " + state.counts.again;
-    els.countHard.textContent = "Hard " + state.counts.hard;
-    els.countGood.textContent = "Good " + state.counts.good;
+    // The dot beside each word carries the colour; the number stays in ink.
+    els.countAgain.textContent = String(state.counts.again);
+    els.countHard.textContent = String(state.counts.hard);
+    els.countGood.textContent = String(state.counts.good);
 
     var repeats = state.queue.length - state.deck.length;
-    els.progressLabel.textContent = "Card " + (state.pos + 1) + " / " + state.queue.length +
+    els.progressLabel.textContent = "Card " + (state.pos + 1) + " of " + state.queue.length +
       (repeats > 0 ? " (" + repeats + " to see again)" : "");
-    els.progressFill.style.width = Math.round((settledCount() / state.deck.length) * 100) + "%";
+
+    var pct = state.deck.length ? Math.round((settledCount() / state.deck.length) * 100) : 0;
+    els.progressFill.style.width = pct + "%";
+    els.progressMeter.setAttribute("aria-valuenow", String(pct));
+    els.progressMeter.setAttribute("aria-valuetext", pct + " percent of the deck settled");
   }
 
   function reveal() {
@@ -345,6 +368,21 @@
     els.faceFront.focus();
   }
 
+  function statTile(label, value, dot) {
+    var box = Archway.el("div", "stat");
+    box.appendChild(Archway.el("span", "stat__value", String(value)));
+
+    var caption = Archway.el("span", "stat__label");
+    if (dot) {
+      var mark = Archway.el("span", "tally__dot tally__dot--" + dot);
+      mark.setAttribute("aria-hidden", "true");
+      caption.appendChild(mark);
+    }
+    caption.appendChild(document.createTextNode(label));
+    box.appendChild(caption);
+    return box;
+  }
+
   function showSummary() {
     var secs = Math.round((Date.now() - state.startedAt) / 1000);
     var mins = Math.floor(secs / 60);
@@ -352,17 +390,15 @@
 
     Archway.clear(els.summaryPanel);
     els.summaryPanel.appendChild(Archway.el("h2", "", "Session complete"));
-    els.summaryPanel.appendChild(Archway.el("p", "card__note",
-      "You worked through " + state.queue.length + " cards, " + state.deck.length + " of them distinct."));
+    els.summaryPanel.appendChild(Archway.el("p", "summary__note",
+      "You worked through " + state.queue.length + " cards, " + state.deck.length + " of them distinct. " +
+      "Nothing is saved when this tab closes, so export the deck if you want it again."));
 
-    var stats = Archway.el("div", "stat-row");
-    [["Again", state.counts.again], ["Hard", state.counts.hard], ["Good", state.counts.good],
-     ["Time", time]].forEach(function (pair) {
-      var box = Archway.el("div", "");
-      box.appendChild(Archway.el("span", "stat__value", String(pair[1])));
-      box.appendChild(Archway.el("span", "small muted", pair[0]));
-      stats.appendChild(box);
-    });
+    var stats = Archway.el("div", "stats");
+    stats.appendChild(statTile("Again", state.counts.again, "again"));
+    stats.appendChild(statTile("Hard", state.counts.hard, "hard"));
+    stats.appendChild(statTile("Good", state.counts.good, "good"));
+    stats.appendChild(statTile("Time", time, ""));
     els.summaryPanel.appendChild(stats);
 
     var row = Archway.el("div", "row");
@@ -389,10 +425,10 @@
   function renderDeckList() {
     Archway.clear(els.deckList);
     state.deck.forEach(function (card) {
-      var row = Archway.el("div", "deck-row");
-      row.appendChild(Archway.el("div", "deck-row__front", card.front));
-      row.appendChild(Archway.el("div", "deck-row__back", card.back));
-      row.appendChild(Archway.el("span", "badge", card.tag));
+      var row = Archway.el("div", "deck__row");
+      row.appendChild(Archway.el("div", "deck__front", card.front));
+      row.appendChild(Archway.el("div", "deck__back", card.back));
+      row.appendChild(Archway.el("span", "badge deck__tag", card.tag));
       els.deckList.appendChild(row);
     });
   }
@@ -454,11 +490,18 @@
 
   function copyTsv() {
     els.copyTsv.disabled = true;
+    spin(els.exportSpinner, true);
+    els.exportStatus.textContent = "";
     Promise.resolve()
       .then(function () { return navigator.clipboard.writeText(toTsv(state.deck)); })
       .then(function () { els.exportStatus.textContent = "Copied " + state.deck.length + " rows."; })
-      .catch(function () { els.exportStatus.textContent = "The browser blocked the clipboard — use the CSV instead."; })
-      .finally(function () { els.copyTsv.disabled = false; });
+      .catch(function () {
+        els.exportStatus.textContent = "The browser blocked the clipboard — use the CSV instead.";
+      })
+      .finally(function () {
+        els.copyTsv.disabled = false;
+        spin(els.exportSpinner, false);
+      });
   }
 
   /* ---------- events ---------- */

@@ -1,14 +1,14 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Archway Flashcards Â· NYU Archway</title>
+<title>Archway Flashcards &middot; NYU Archway</title>
 <meta name="description" content="Turn lecture notes into a reviewable flashcard deck and export it to Anki, through the NYU Archway gateway.">
 <link rel="stylesheet" href="assets/archway.css">
 <script>
   // Pre-paint theme stamp: avoids a light flash for dark-mode users. Inline on
-  // purpose and safe here â€” GitHub Pages sets no CSP. (The Archway's own pages
+  // purpose and safe here - GitHub Pages sets no CSP. (The Archway's own pages
   // cannot do this; script-src 'self' blocks it.)
   try {
     var t = localStorage.getItem("nyu-archway:theme");
@@ -16,19 +16,161 @@
   } catch (e) {}
 </script>
 <style>
-  .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--sp-3); }
-  .view-toggle { display: flex; gap: var(--sp-2); }
+  /* =====================================================================
+     Page rules for Archway Flashcards.
 
-  /* The flip: both faces share one grid cell so the container is as tall as the
-     longer of the two and never resizes mid-flip. */
-  .flash { perspective: 1400px; }
+     Everything generic - the shell, topbar, cards, buttons, fields, badges,
+     selects, meters, spinners, alerts - comes from assets/archway.css and is
+     deliberately NOT re-declared here. What follows is only the furniture
+     this one app needs: the three numbered steps, the flip card, the grading
+     row, the deck table and the session summary.
+     ===================================================================== */
+
+  /* The three steps are stages of one task, so they sit a little further
+     apart than the default .stack rhythm. */
+  #app.stack { gap: var(--sp-5); }
+
+  /* -------------------------------------------------- card heads & steps */
+
+  /* .card__head hands `margin-right: auto` to its first child element, so the
+     step number, the title and any count travel together and everything else
+     in the head is pushed to the trailing edge. */
+  .head-title {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  /* The order of the three cards is stated, not left to be inferred. */
+  .step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    flex: none;
+    border-radius: var(--r-full);
+    border: 1px solid var(--accent-border);
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  /* Review / Deck. One track holding two .btn--sm, so the pair reads as a
+     single control with a current position rather than two loose buttons. */
+  .segmented {
+    display: inline-flex;
+    gap: var(--sp-1);
+    padding: var(--sp-1);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    background: var(--surface-2);
+  }
+
+  /* A status line whose text does not shift when a spinner appears beside it. */
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    min-height: 1.25rem;
+    min-width: 0;
+  }
+
+  /* ------------------------------------------------------- 1. the notes */
+
+  .controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: var(--sp-4);
+    align-items: start;
+  }
+
+  /* The call's own output belongs under the action bar, not above it. */
+  #error,
+  #readout {
+    margin-top: var(--sp-4);
+  }
+
+  #error:empty {
+    display: none;
+  }
+
+  /* ------------------------------------------------------ 2. the review */
+
+  /* Review is the centrepiece: a single centred column. Spacing is margin
+     rather than flex gap so that .card__foot's own margin-top sets the same
+     distance instead of adding to one. */
+  .stage > * + * {
+    margin-top: var(--sp-5);
+  }
+
+  .stage__meta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+
+  /* Progress sits quietly above the card: small type, ink tokens, and a
+     coloured dot that only ever accompanies a word. */
+  .tally {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-2) var(--sp-4);
+    font-size: var(--fs-xs);
+    color: var(--ink-2);
+  }
+
+  .tally__item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+
+  .tally__item b {
+    color: var(--ink-1);
+    font-weight: 640;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tally__dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    flex: none;
+    border-radius: var(--r-full);
+    background: var(--ink-3);
+  }
+
+  .tally__dot--again { background: var(--critical); }
+  .tally__dot--hard { background: var(--warning); }
+  .tally__dot--good { background: var(--good); }
+
+  .tally__progress {
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  #progress-fill { width: 0; }
+
+  /* ---------------------------------------------------------- the card */
+
+  .flash { perspective: 1600px; }
+
+  /* Both faces share one grid cell, so the box is as tall as the taller face
+     and never resizes mid-flip. */
   .flash__inner {
     display: grid;
     transform-style: preserve-3d;
-    transition: transform .45s cubic-bezier(.2, .7, .3, 1);
-    min-height: 240px;
+    transition: transform 0.5s var(--ease);
+    min-height: clamp(15rem, 34vh, 20rem);
   }
+
   .flash.is-flipped .flash__inner { transform: rotateY(180deg); }
+
   .flash__face {
     grid-area: 1 / 1;
     backface-visibility: hidden;
@@ -36,56 +178,289 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: var(--sp-3);
-    padding: var(--sp-5);
+    gap: var(--sp-4);
+    padding: var(--sp-6) var(--sp-5);
     border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    background: var(--surface-2);
-    text-align: center;
+    border-radius: var(--r-xl);
+    box-shadow: var(--shadow-2);
     overflow: auto;
+    transition: box-shadow 0.18s var(--ease), border-color 0.18s var(--ease);
   }
-  .flash__face--back { transform: rotateY(180deg); }
-  .flash__q { font-size: var(--fs-lg); line-height: 1.35; max-width: 46ch; margin: 0; }
-  .flash__a { font-size: var(--fs-md); line-height: 1.55; max-width: 60ch; margin: 0; white-space: pre-wrap; }
 
-  .grades { display: flex; flex-wrap: wrap; gap: var(--sp-2); justify-content: center; }
-  .grades.hidden { display: none; }   /* this block loads after archway.css, so .hidden needs the help */
-  .deck-list { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .deck-row {
-    display: grid;
-    grid-template-columns: 1.1fr 1.4fr auto;
+  .flash__face--front {
+    background: linear-gradient(180deg, var(--surface-1) 0%, var(--surface-2) 100%);
+  }
+
+  .flash__face--back {
+    transform: rotateY(180deg);
+    background: linear-gradient(180deg, var(--accent-soft) 0%, var(--surface-1) 62%);
+    border-color: var(--accent-border);
+  }
+
+  .flash:not(.is-flipped) { cursor: pointer; }
+
+  .flash:not(.is-flipped):hover .flash__face--front {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-3);
+  }
+
+  /* `margin-block: auto` rather than `justify-content: center`: when a long
+     answer overflows there is no free space to distribute, so it starts at
+     the top and scrolls instead of being clipped at both ends. */
+  .flash__main {
+    margin-block: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     gap: var(--sp-3);
+    width: 100%;
+  }
+
+  .flash__q {
+    margin: 0;
+    max-width: 30ch;
+    font-size: var(--fs-xl);
+    font-weight: 620;
+    line-height: 1.28;
+    letter-spacing: -0.018em;
+    text-align: center;
+    text-wrap: balance;
+  }
+
+  /* Ranged rather than centred: two or three sentences read as prose. */
+  .flash__a {
+    margin: 0;
+    max-width: 58ch;
+    font-size: var(--fs-md);
+    line-height: 1.62;
+    color: var(--ink-1);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+
+  .flash__hint {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-xs);
+    color: var(--ink-3);
+    text-align: center;
+  }
+
+  /* --------------------------------------------------------- the actions */
+
+  /* One action zone whose height does not change when the card flips. */
+  .stage__actions { min-height: 2.75rem; }
+
+  #reveal-row {
+    max-width: 24rem;
+    margin: 0 auto;
+  }
+
+  .grades {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--sp-2);
+    max-width: 34rem;
+    margin: 0 auto;
+  }
+
+  /* A comfortable hit target for the one control pressed on every card. The
+     button's own colour, padding and shadow are left to the design system. */
+  .grades .btn { min-height: 2.75rem; }
+
+  /* ------------------------------------------------------- the shortcuts */
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2) var(--sp-4);
+    font-size: var(--fs-xs);
+    color: var(--ink-3);
+    text-align: center;
+  }
+
+  .stage > .legend { margin-top: var(--sp-4); }
+
+  .legend__item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+
+  .legend__note {
+    flex-basis: 100%;
+    max-width: 58ch;
+    margin: 0 auto;
+    line-height: 1.55;
+  }
+
+  kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.55em;
+    padding: 0.08em 0.4em;
+    border: 1px solid var(--border-strong);
+    border-bottom-width: 2px;
+    border-radius: var(--r-xs);
+    background: var(--surface-1);
+    color: var(--ink-2);
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    font-weight: 620;
+    line-height: 1.5;
+  }
+
+  /* ----------------------------------------------------------- deck view */
+
+  .deck {
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--surface-1);
+    overflow: hidden;
+  }
+
+  .deck__head,
+  .deck__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 7.5rem;
+    gap: var(--sp-4);
+    padding: var(--sp-3) var(--sp-4);
     align-items: start;
-    padding: var(--sp-3);
+  }
+
+  .deck__head {
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.625rem;
+    font-weight: 640;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .deck__row {
+    transition: background 0.14s var(--ease);
+  }
+
+  .deck__row + .deck__row { border-top: 1px solid var(--border); }
+  .deck__row:hover { background: var(--surface-2); }
+
+  .deck__front {
+    font-weight: 560;
+    color: var(--ink-1);
+    overflow-wrap: anywhere;
+  }
+
+  .deck__back {
+    color: var(--ink-2);
+    font-size: var(--fs-sm);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .deck__tag { justify-self: start; }
+
+  /* ------------------------------------------------------- the summary */
+
+  .summary__note {
+    margin: 0;
+    max-width: 62ch;
+    color: var(--ink-2);
+    font-size: var(--fs-sm);
+    line-height: 1.55;
+  }
+
+  .stage > .summary__note { margin-top: var(--sp-2); }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+    gap: var(--sp-3);
+  }
+
+  .stat {
+    padding: var(--sp-3) var(--sp-4);
     border: 1px solid var(--border);
     border-radius: var(--r-md);
     background: var(--surface-2);
   }
-  .deck-row__back { color: var(--ink-2); white-space: pre-wrap; }
-  .stat-row { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
-  .stat__value { font-size: var(--fs-xl); font-family: var(--mono); display: block; }
-  kbd {
+
+  /* The number wears an ink token; the dot next to the label carries the
+     identity. A figure printed in a status colour is unreadable at a glance. */
+  .stat__value {
+    display: block;
     font-family: var(--mono);
-    font-size: var(--fs-xs);
-    border: 1px solid var(--border);
-    border-radius: var(--r-sm);
-    padding: 1px 6px;
-    background: var(--surface-3);
-    color: var(--ink-2);
+    font-size: var(--fs-xl);
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-1);
   }
+
+  .stat__label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-top: var(--sp-1);
+    font-size: var(--fs-xs);
+    color: var(--ink-3);
+  }
+
+  /* ---------------------------------------------------- unparsed output */
+
   .raw-out {
-    white-space: pre-wrap;
+    margin: var(--sp-4) 0 0;
+    padding: var(--sp-4);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--surface-2);
+    color: var(--ink-2);
     font-family: var(--mono);
     font-size: var(--fs-xs);
-    max-height: 340px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 22rem;
     overflow: auto;
-    margin: 0;
   }
-  @media (max-width: 640px) {
-    .deck-row { grid-template-columns: 1fr; }
-    .flash__q { font-size: var(--fs-md); }
+
+  /* ------------------------------------------------------- 3. responsive */
+
+  @media (max-width: 40rem) {
+    .flash__inner { min-height: 14rem; }
+
+    .flash__face {
+      padding: var(--sp-5) var(--sp-4);
+      border-radius: var(--r-lg);
+    }
+
+    .flash__q { max-width: 26ch; }
+
+    .stage > * + * { margin-top: var(--sp-4); }
+    .stage > .legend { margin-top: var(--sp-4); }
+
+    .deck__head { display: none; }
+
+    .deck__row {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--sp-2);
+      padding: var(--sp-4);
+    }
   }
+
+  /* At 360px the three grades must still sit side by side - one-handed
+     grading matters more than the key hints, which no phone can send. */
+  @media (max-width: 26rem) {
+    .grades { gap: var(--sp-1); }
+    .grades kbd { display: none; }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .flash__inner { transition: none; }
   }
@@ -103,25 +478,31 @@
     <a class="btn btn--sm" href="https://github.com/AndrewBuildsNYU/archway-flashcards">Source</a>
   </header>
 
-  <p class="lede">Paste a lecture's worth of notes and get a deck of real questions you can review one card
-  at a time and export to Anki. It demonstrates asking the Archway for strict JSON â€” and parsing it
-  defensively for the times a model wraps it in prose anyway.</p>
+  <p class="lede">Paste a lecture's worth of notes and get a deck of real questions &mdash; review them one
+  card at a time, then export the deck to Anki. It shows what it takes to ask the Archway for strict JSON,
+  and to parse that answer defensively for the times a model wraps it in prose anyway.</p>
 
   <div id="key-mount"></div>
 
-  <main id="app">
-    <section class="card">
+  <main id="app" class="stack">
+
+    <!-- ------------------------------------------------------ 1. notes -->
+    <section class="card" aria-labelledby="notes-title">
       <div class="card__head">
-        <strong>1 &middot; Your notes</strong>
+        <div class="head-title">
+          <span class="step" aria-hidden="true">1</span>
+          <h2 id="notes-title">Your notes</h2>
+        </div>
         <button type="button" class="btn btn--sm btn--ghost" id="sample">Load sample notes</button>
       </div>
 
       <div class="stack">
         <div class="field">
           <label for="notes">Lecture notes or reading</label>
-          <textarea id="notes" rows="10" placeholder="Paste a lecture's worth of notes here â€” headings, bullets and half-sentences are fine."></textarea>
+          <textarea id="notes" rows="9"
+                    placeholder="Paste a lecture's worth of notes here &mdash; headings, bullets and half-sentences are all fine."></textarea>
           <p class="field__hint">Sent to the model you pick and nowhere else. The Archway records who called
-          which model and how many tokens, never the text itself.</p>
+          which model and how many tokens &mdash; never the text itself.</p>
         </div>
 
         <div class="controls">
@@ -147,118 +528,172 @@
             <select id="model" disabled>
               <option>Connect a key first</option>
             </select>
+            <p class="field__hint">Only the models this key is allowed to call.</p>
           </div>
         </div>
 
-        <div class="row">
-          <button type="button" class="btn btn--primary" id="generate" disabled>Build deck</button>
-          <button type="button" class="btn btn--ghost hidden" id="stop">Stop</button>
-          <span class="small muted" id="gen-status" role="status" aria-live="polite"></span>
-          <span class="spacer"></span>
-          <span class="small muted" id="gen-progress" aria-hidden="true"></span>
-        </div>
-
         <p class="field__hint" id="key-hint">Connect your Archway key above to enable generation.</p>
-
-        <div id="error"></div>
-        <div id="readout" class="readout hidden"></div>
       </div>
+
+      <div class="card__foot">
+        <button type="button" class="btn btn--primary" id="generate" disabled>Build deck</button>
+        <button type="button" class="btn btn--danger hidden" id="stop">Stop</button>
+        <span class="status">
+          <span class="spinner hidden" id="gen-spinner" aria-hidden="true"></span>
+          <span class="small muted" id="gen-status" role="status" aria-live="polite"></span>
+        </span>
+        <span class="spacer"></span>
+        <span class="xs muted" id="gen-progress" aria-hidden="true"></span>
+      </div>
+
+      <div id="error" role="alert" aria-live="assertive"></div>
+      <div id="readout" class="readout hidden"></div>
     </section>
 
-    <section class="card hidden" id="deck-section">
+    <!-- ----------------------------------------------------- 2. review -->
+    <section class="card hidden" id="deck-section" aria-labelledby="review-title">
       <div class="card__head">
-        <strong>2 &middot; Review</strong>
-        <div class="view-toggle" role="group" aria-label="View">
+        <div class="head-title">
+          <span class="step" aria-hidden="true">2</span>
+          <h2 id="review-title">Review</h2>
+          <span class="badge" id="deck-count"></span>
+        </div>
+        <div class="segmented" role="group" aria-label="View">
           <button type="button" class="btn btn--sm btn--primary" id="view-review" aria-pressed="true">Review</button>
           <button type="button" class="btn btn--sm btn--ghost" id="view-deck" aria-pressed="false">Deck</button>
         </div>
       </div>
 
-      <div class="stack" id="review-panel" tabindex="-1">
-        <div class="row row--tight">
-          <span class="badge badge--bad" id="count-again">Again 0</span>
-          <span class="badge badge--warn" id="count-hard">Hard 0</span>
-          <span class="badge badge--good" id="count-good">Good 0</span>
-          <span class="spacer"></span>
-          <span class="small muted" id="progress-label" aria-live="polite"></span>
+      <div class="stage" id="review-panel" tabindex="-1">
+        <div class="stage__meta">
+          <div class="tally">
+            <span class="tally__item">
+              <span class="tally__dot tally__dot--again" aria-hidden="true"></span>Again <b id="count-again">0</b>
+            </span>
+            <span class="tally__item">
+              <span class="tally__dot tally__dot--hard" aria-hidden="true"></span>Hard <b id="count-hard">0</b>
+            </span>
+            <span class="tally__item">
+              <span class="tally__dot tally__dot--good" aria-hidden="true"></span>Good <b id="count-good">0</b>
+            </span>
+            <span class="spacer"></span>
+            <span class="tally__progress" id="progress-label" role="status" aria-live="polite"></span>
+          </div>
+          <div class="meter" id="progress-meter" role="progressbar"
+               aria-label="Cards settled" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div class="meter__fill" id="progress-fill"></div>
+          </div>
         </div>
-        <div class="meter"><div class="meter__fill" id="progress-fill"></div></div>
 
         <div class="flash" id="flash">
           <div class="flash__inner">
             <div class="flash__face flash__face--front" id="face-front" tabindex="-1" role="group" aria-label="Question">
               <span class="badge badge--accent" id="front-tag"></span>
-              <p class="flash__q" id="front-text"></p>
+              <div class="flash__main">
+                <p class="flash__q" id="front-text"></p>
+              </div>
+              <span class="flash__hint" aria-hidden="true">Tap the card or press <kbd>Space</kbd> to see the answer</span>
               <span class="sr-only">Press the space bar to show the answer.</span>
             </div>
             <div class="flash__face flash__face--back" id="face-back" tabindex="-1" role="group" aria-label="Answer" aria-hidden="true">
-              <span class="xs muted">Answer</span>
-              <p class="flash__a" id="back-text"></p>
+              <span class="badge">Answer</span>
+              <div class="flash__main">
+                <p class="flash__a" id="back-text"></p>
+              </div>
+              <span class="flash__hint" aria-hidden="true">How well did you know it?</span>
               <span class="sr-only">Press 1 for again, 2 for hard, 3 for good.</span>
             </div>
           </div>
         </div>
 
-        <div class="row" id="reveal-row">
-          <button type="button" class="btn btn--ghost btn--sm" id="prev">&larr; Previous</button>
-          <span class="spacer"></span>
-          <button type="button" class="btn btn--primary" id="reveal">Show answer</button>
-          <span class="spacer"></span>
-          <button type="button" class="btn btn--ghost btn--sm" id="next">Next &rarr;</button>
+        <div class="stage__actions">
+          <div id="reveal-row">
+            <button type="button" class="btn btn--primary btn--block" id="reveal">Show answer</button>
+          </div>
+          <div class="grades hidden" id="grade-row" role="group" aria-label="Grade this card">
+            <button type="button" class="btn btn--danger" id="grade-again">Again <kbd>1</kbd></button>
+            <button type="button" class="btn" id="grade-hard">Hard <kbd>2</kbd></button>
+            <button type="button" class="btn btn--primary" id="grade-good">Good <kbd>3</kbd></button>
+          </div>
         </div>
 
-        <div class="grades hidden" id="grade-row">
-          <button type="button" class="btn btn--ghost" id="grade-again">Again (1)</button>
-          <button type="button" class="btn" id="grade-hard">Hard (2)</button>
-          <button type="button" class="btn btn--primary" id="grade-good">Good (3)</button>
+        <div class="card__foot">
+          <button type="button" class="btn btn--sm btn--ghost" id="prev">&larr; Previous</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn btn--sm btn--ghost" id="next">Next &rarr;</button>
         </div>
 
-        <p class="xs muted">
-          <kbd>Space</kbd> show answer &middot;
-          <kbd>1</kbd> again &middot; <kbd>2</kbd> hard &middot; <kbd>3</kbd> good &middot;
-          <kbd>&larr;</kbd> <kbd>&rarr;</kbd> previous / next card.
-          Marking a card <em>Again</em> sends it to the back of this session's queue.
-        </p>
+        <div class="legend">
+          <span class="legend__item"><kbd>Space</kbd> show answer</span>
+          <span class="legend__item"><kbd>1</kbd> again</span>
+          <span class="legend__item"><kbd>2</kbd> hard</span>
+          <span class="legend__item"><kbd>3</kbd> good</span>
+          <span class="legend__item"><kbd>&larr;</kbd> <kbd>&rarr;</kbd> previous / next</span>
+          <p class="legend__note">Marking a card <em>Again</em> sends it to the back of this session's queue.</p>
+        </div>
       </div>
 
-      <div class="stack hidden" id="deck-panel" tabindex="-1">
-        <p class="card__note">Every card in the deck. This is what the export contains.</p>
-        <div class="deck-list" id="deck-list"></div>
+      <div class="hidden" id="deck-panel" tabindex="-1">
+        <p class="card__note">Every card in the deck, in the order the model wrote them. This is exactly what
+        the export contains.</p>
+        <div class="deck">
+          <div class="deck__head" aria-hidden="true">
+            <span>Question</span>
+            <span>Answer</span>
+            <span>Topic</span>
+          </div>
+          <div id="deck-list"></div>
+        </div>
       </div>
 
-      <div class="stack hidden" id="summary-panel" tabindex="-1"></div>
+      <div class="stage hidden" id="summary-panel" tabindex="-1"></div>
     </section>
 
-    <section class="card hidden" id="export-section">
-      <div class="card__head"><strong>3 &middot; Keep it</strong></div>
-      <div class="stack">
-        <div class="row">
-          <button type="button" class="btn btn--primary" id="download-csv">Download Anki CSV</button>
-          <button type="button" class="btn" id="copy-tsv">Copy as TSV</button>
+    <!-- ----------------------------------------------------- 3. export -->
+    <section class="card hidden" id="export-section" aria-labelledby="export-title">
+      <div class="card__head">
+        <div class="head-title">
+          <span class="step" aria-hidden="true">3</span>
+          <h2 id="export-title">Keep the deck</h2>
+        </div>
+      </div>
+
+      <p class="card__note">In Anki, choose <span class="mono">File &rarr; Import</span> and pick the CSV: column 1
+      is Front, column 2 is Back, column 3 is Tags, and the file states that itself for Anki 2.1.54 and newer.
+      The TSV pastes straight into a spreadsheet or Quizlet's import box.</p>
+
+      <div class="card__foot">
+        <button type="button" class="btn btn--primary" id="download-csv">Download Anki CSV</button>
+        <button type="button" class="btn" id="copy-tsv">Copy as TSV</button>
+        <span class="spacer"></span>
+        <span class="status">
+          <span class="spinner hidden" id="export-spinner" aria-hidden="true"></span>
           <span class="small muted" id="export-status" role="status" aria-live="polite"></span>
-        </div>
-        <p class="field__hint">In Anki: <span class="mono">File &rarr; Import</span>, choose the CSV, and map
-        column 1 to Front, column 2 to Back and column 3 to Tags (the file states this itself for Anki 2.1.54
-        and newer). The TSV pastes straight into a spreadsheet or Quizlet's import box.</p>
+        </span>
       </div>
     </section>
 
-    <section class="card hidden" id="raw-section">
-      <div class="card__head"><strong>Unparsed response</strong></div>
-      <div class="stack">
-        <div class="alert">
-          <div class="alert__title">That response was not the JSON this app asked for</div>
-          <p class="small">Nothing is lost â€” here is exactly what came back. Try again, or pick another model:
-          some follow a strict JSON instruction more reliably than others.</p>
+    <!-- ------------------------------------------- the JSON that was not -->
+    <section class="card hidden" id="raw-section" aria-labelledby="raw-title">
+      <div class="card__head">
+        <div class="head-title">
+          <h2 id="raw-title">Unparsed response</h2>
         </div>
-        <pre class="raw-out" id="raw-out"></pre>
       </div>
+
+      <div class="alert">
+        <span class="alert__title">That response was not the JSON this app asked for</span>
+        <span>Nothing is lost &mdash; here is exactly what came back. Try again, or pick another model: some
+        follow a strict JSON instruction far more reliably than others.</span>
+      </div>
+
+      <pre class="raw-out" id="raw-out"></pre>
     </section>
+
   </main>
 
   <footer class="footer">
-    <span>Runs entirely in your browser. Your key is sent only to the Archway you point it at.</span>
-    <span>Ask whoever issued your key for the gateway address and its documentation.</span>
+    <span>Runs entirely in your browser. Your key is held for this tab only, and is sent only to the Archway.</span>
     <a href="https://github.com/AndrewBuildsNYU?tab=repositories&amp;q=archway-">More examples</a>
   </footer>
 </div>
