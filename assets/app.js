@@ -117,7 +117,7 @@
   }
 
   function loadModels() {
-    els.genStatus.textContent = "Loading models…";
+    els.genStatus.textContent = "Loading models\u2026";
     spin(els.genSpinner, true);
     Archway.listModels().then(function (models) {
       modelsById = {};
@@ -213,7 +213,7 @@
     Archway.clear(els.error);
     if (notes.length < 40) {
       Archway.renderError(els.error, new Error(
-        "Paste at least a paragraph of notes — a sentence or two is not enough to build a deck from."));
+        "Paste at least a paragraph of notes \u2014 a sentence or two is not enough to build a deck from."));
       els.notes.focus();
       return;
     }
@@ -227,7 +227,7 @@
 
     state.controller = new AbortController();
     busy(true);
-    els.genStatus.textContent = "Writing " + count + " cards…";
+    els.genStatus.textContent = "Writing " + count + " cards\u2026";
 
     Archway.streamChat({
       model: model,
@@ -496,7 +496,7 @@
       .then(function () { return navigator.clipboard.writeText(toTsv(state.deck)); })
       .then(function () { els.exportStatus.textContent = "Copied " + state.deck.length + " rows."; })
       .catch(function () {
-        els.exportStatus.textContent = "The browser blocked the clipboard — use the CSV instead.";
+        els.exportStatus.textContent = "The browser blocked the clipboard \u2014 use the CSV instead.";
       })
       .finally(function () {
         els.copyTsv.disabled = false;
