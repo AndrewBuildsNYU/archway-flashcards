@@ -234,6 +234,8 @@
       system: SYSTEM,
       messages: [{ role: "user", content: userPrompt(notes, count, els.difficulty.value) }],
       maxTokens: maxTokens,
+      // Low: a deck should read like notes, not like invention. Dropped for
+      // models that only run at their own default - Archway.supportsTemperature.
       temperature: 0.3,
       signal: state.controller.signal
     }, function (frag, full) {
