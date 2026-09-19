@@ -222,7 +222,10 @@
     var model = els.model.value;
     var info = modelsById[model];
     // Asking for more output than the model allows is a 400 from the vendor, so clamp.
-    var room = 220 * count + 600;
+    // The flat slack also has to cover a thinking model's reasoning, which on
+    // Gemini is spent from this same budget - and a deck is parsed as JSON, so
+    // a truncated answer is not a short deck, it is no deck at all.
+    var room = 220 * count + 1200;
     var maxTokens = info && info.max_output_tokens ? Math.min(room, info.max_output_tokens) : room;
 
     state.controller = new AbortController();
