@@ -70,5 +70,6 @@ Output length is clamped to the selected model's `max_output_tokens`, taken from
 | `assets/app.js` | Prompt, defensive JSON parse, review queue, CSV and TSV export |
 | `assets/archway.js` | Shared Archway client: key panel, model list, chat and streaming, error rendering |
 | `assets/archway.css` | Shared design system: tokens, components, dark mode |
+| `assets/fonts/` | Inter, the interface typeface, self-hosted under the SIL Open Font License (`OFL.txt`) |
 
 MIT licensed.
